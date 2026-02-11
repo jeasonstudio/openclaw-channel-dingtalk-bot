@@ -19,7 +19,7 @@
 直接运行 openclaw 插件安装命令，openclaw 会自动处理下载、安装依赖和注册：
 
 ```bash
-openclaw plugins install https://github.com/soimy/clawdbot-channel-dingtalk.git
+openclaw plugins install https://github.com/jeasonstudio/openclaw-channel-dingtalk-bot.git
 ```
 
 ### 方法 B：通过本地源码安装
@@ -28,8 +28,8 @@ openclaw plugins install https://github.com/soimy/clawdbot-channel-dingtalk.git
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/soimy/openclaw-channel-dingtalk.git
-cd openclaw-channel-dingtalk
+git clone https://github.com/jeasonstudio/openclaw-channel-dingtalk-bot.git
+cd openclaw-channel-dingtalk-bot
 
 # 2. 安装依赖 (必需)
 npm install
@@ -340,8 +340,8 @@ openclaw gateway restart
 1. 克隆仓库并安装依赖
 
 ```bash
-git clone https://github.com/soimy/openclaw-channel-dingtalk.git
-cd openclaw-channel-dingtalk
+git clone https://github.com/jeasonstudio/openclaw-channel-dingtalk-bot.git
+cd openclaw-channel-dingtalk-bot
 npm install
 ```
 

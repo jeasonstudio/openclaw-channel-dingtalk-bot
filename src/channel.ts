@@ -912,7 +912,7 @@ async function streamAICard(
         `1. 前往钉钉开发者后台检查该模板的“变量管理”\n` +
         `2. 确保配置中的 \`cardTemplateKey\` 与模板中用于显示内容的字段变量名完全一致\n\n` +
         `*注意：当前及后续消息将自动转为 Markdown 发送，直到问题修复。*\n` +
-        `*参考文档: https://github.com/soimy/openclaw-channel-dingtalk/blob/main/README.md#3-%E5%BB%BA%E7%AB%8B%E5%8D%A1%E7%89%87%E6%A8%A1%E6%9D%BF%E5%8F%AF%E9%80%89`;
+        `*参考文档: https://github.com/jeasonstudio/openclaw-channel-dingtalk-bot/blob/main/README.md#3-%E5%BB%BA%E7%AB%8B%E5%8D%A1%E7%89%87%E6%A8%A1%E6%9D%BF%E5%8F%AF%E9%80%89`;
 
 
       log?.error?.(
