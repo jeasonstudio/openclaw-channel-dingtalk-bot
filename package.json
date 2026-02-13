@@ -1,0 +1,63 @@
+{
+  "name": "@openclaw/dingtalk",
+  "version": "2.5.1",
+  "description": "DingTalk (钉钉) channel plugin for OpenClaw",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint --fix src/ && prettier --write src/"
+  },
+  "keywords": [
+    "clawdbot",
+    "openclaw",
+    "dingtalk",
+    "channel",
+    "webhook",
+    "钉钉",
+    "bot"
+  ],
+  "author": "sym",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.13.5",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.3.0"
+  },
+  "openclaw": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "channels": [
+      "dingtalk"
+    ],
+    "installDependencies": true,
+    "channel": {
+      "id": "dingtalk",
+      "label": "DingTalk",
+      "selectionLabel": "DingTalk (钉钉)",
+      "docsPath": "/channels/dingtalk",
+      "docsLabel": "dingtalk",
+      "blurb": "钉钉企业内部机器人，使用 Webhook 模式接入 OpenClaw gateway。",
+      "order": 70,
+      "aliases": [
+        "dd",
+        "ding"
+      ]
+    },
+    "install": {
+      "npmSpec": "@openclaw/dingtalk",
+      "localPath": "extensions/dingtalk-channel",
+      "defaultChoice": "local"
+    }
+  }
+}
