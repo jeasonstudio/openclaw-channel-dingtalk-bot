@@ -13,7 +13,12 @@ import type {
 } from 'openclaw/dist/plugin-sdk/index.js';
 import { getRuntime } from './runtime';
 import { dingtalkSign } from './sign';
-import type { DingTalkConfig, DingTalkInboundMessage, ResolvedDingTalkAccount } from './types';
+import type {
+  DingTalkConfig,
+  DingTalkInboundMessage,
+  DingTalkRichTextNode,
+  ResolvedDingTalkAccount,
+} from './types';
 
 const WEBHOOK_PATH = '/dingtalk-channel/message';
 const CHANNEL_ID = 'dingtalk';
@@ -106,6 +111,123 @@ async function sendMarkdownBySessionWebhook(params: {
   }
 }
 
+type InboundTextParseResult =
+  | { text: string; source: 'text' | 'richText' }
+  | { text: ''; reason: 'unsupported' | 'empty' };
+
+function resolveDingTalkAccessToken(): string {
+  const token = process.env.DINGTALK_ACCESS_TOKEN ?? process.env.DINGTALK_APP_ACCESS_TOKEN;
+  return typeof token === 'string' ? token.trim() : '';
+}
+
+async function resolveMessageFileDownloadUrl(params: {
+  downloadCode: string;
+  robotCode: string;
+  accessToken: string;
+}): Promise<string> {
+  const response = await axios.post<{ downloadUrl?: string }>(
+    'https://api.dingtalk.com/v1.0/robot/messageFiles/download',
+    {
+      downloadCode: params.downloadCode,
+      robotCode: params.robotCode,
+    },
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'x-acs-dingtalk-access-token': params.accessToken,
+      },
+    },
+  );
+
+  return (response.data?.downloadUrl ?? '').trim();
+}
+
+async function parseRichTextNodes(params: {
+  nodes?: DingTalkRichTextNode[];
+  robotCode?: string;
+  log: (message: string) => void;
+  accountId: string;
+}): Promise<string> {
+  const { nodes, robotCode, log, accountId } = params;
+  if (!Array.isArray(nodes) || nodes.length === 0) {
+    return '';
+  }
+
+  const accessToken = resolveDingTalkAccessToken();
+  const resolvedRobotCode = typeof robotCode === 'string' ? robotCode.trim() : '';
+  const parts: string[] = [];
+
+  for (const node of nodes) {
+    if (typeof node.text === 'string') {
+      parts.push(node.text);
+      continue;
+    }
+
+    if (node.type !== 'picture') {
+      continue;
+    }
+
+    const downloadCode =
+      typeof node.downloadCode === 'string'
+        ? node.downloadCode
+        : typeof node.pictureDownloadCode === 'string'
+          ? node.pictureDownloadCode
+          : '';
+
+    if (!downloadCode) {
+      parts.push('[图片]');
+      continue;
+    }
+
+    if (!accessToken || !resolvedRobotCode || resolvedRobotCode === 'normal') {
+      parts.push(`[图片 downloadCode=${downloadCode}]`);
+      continue;
+    }
+
+    try {
+      const downloadUrl = await resolveMessageFileDownloadUrl({
+        downloadCode,
+        robotCode: resolvedRobotCode,
+        accessToken,
+      });
+      parts.push(downloadUrl ? `[图片](${downloadUrl})` : `[图片 downloadCode=${downloadCode}]`);
+    } catch (err) {
+      log(
+        `dingtalk[${accountId}] resolve downloadUrl failed: ${String(err)}; fallback to downloadCode`,
+      );
+      parts.push(`[图片 downloadCode=${downloadCode}]`);
+    }
+  }
+
+  return parts.join('');
+}
+
+async function parseInboundText(params: {
+  payload: DingTalkInboundMessage;
+  log: (message: string) => void;
+  accountId: string;
+}): Promise<InboundTextParseResult> {
+  const { payload, log, accountId } = params;
+  if (payload.msgtype === 'text') {
+    const text = (payload.text?.content ?? '').trim();
+    return text ? { text, source: 'text' } : { text: '', reason: 'empty' };
+  }
+
+  if (payload.msgtype === 'richText') {
+    const text = (
+      await parseRichTextNodes({
+        nodes: payload.content?.richText,
+        robotCode: payload.robotCode,
+        log,
+        accountId,
+      })
+    ).trim();
+    return text ? { text, source: 'richText' } : { text: '', reason: 'empty' };
+  }
+
+  return { text: '', reason: 'unsupported' };
+}
+
 async function handleInboundMessage(params: {
   cfg: OpenClawConfig;
   account: ResolvedDingTalkAccount;
@@ -117,16 +239,20 @@ async function handleInboundMessage(params: {
   const runtime = getRuntime();
   const isGroup = payload.conversationType === '2';
 
-  if (payload.msgtype !== 'text' || !payload.text?.content) {
-    log(`dingtalk[${account.accountId}] ignore unsupported msgtype=${payload.msgtype}`);
-    return;
-  }
-
-  const messageText = payload.text.content.trim();
-  if (!messageText) {
+  const parsed = await parseInboundText({
+    payload,
+    log,
+    accountId: account.accountId,
+  });
+  if ('reason' in parsed) {
+    if (parsed.reason === 'unsupported') {
+      log(`dingtalk[${account.accountId}] ignore unsupported msgtype=${payload.msgtype}`);
+      return;
+    }
     log(`dingtalk[${account.accountId}] ignore empty text`);
     return;
   }
+  const messageText = parsed.text;
 
   webhookByConversation.set(payload.conversationId, {
     url: payload.sessionWebhook,

@@ -12,6 +12,9 @@ export interface ResolvedDingTalkAccount {
 export interface DingTalkInboundMessage {
   msgtype: string;
   text?: { content: string };
+  content?: {
+    richText?: DingTalkRichTextNode[];
+  };
   msgId: string;
   conversationType: string;
   conversationId: string;
@@ -28,4 +31,11 @@ export interface DingTalkInboundMessage {
   atUsers?: Array<{ dingtalkId: string }>;
   sessionWebhook: string;
   sessionWebhookExpiredTime: number;
+}
+
+export interface DingTalkRichTextNode {
+  text?: string;
+  type?: string;
+  downloadCode?: string;
+  pictureDownloadCode?: string;
 }

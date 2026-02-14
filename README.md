@@ -93,9 +93,18 @@ openclaw plugins install -l .
 
 处理要点：
 
-- 仅处理 `msgtype = text`
-- `text.content` 会做 `trim()`（兼容群里 `@` 后前导空格）
+- 支持 `msgtype = text` 与 `msgtype = richText`
+- `text.content` 与 `content.richText` 解析结果都会做 `trim()`
+- `richText` 中的文本节点会按顺序拼接；图片节点会优先按 `downloadCode` 调用下载接口解析为临时链接，失败时回退为占位文本（如 `[图片 downloadCode=xxx]`）
 - 群聊消息默认仅在命中 `@机器人` 时进入 Agent 分发
+
+### richText 图片下载说明
+
+- 下载接口：`POST https://api.dingtalk.com/v1.0/robot/messageFiles/download`
+- Header：`x-acs-dingtalk-access-token`
+- Body：`{ downloadCode, robotCode }`
+- 当前插件通过环境变量读取 access token：`DINGTALK_ACCESS_TOKEN`（或 `DINGTALK_APP_ACCESS_TOKEN`）
+- 若缺少 token、`robotCode` 不可用，或接口调用失败，则自动降级为 `downloadCode` 占位文本
 
 ## 鉴权与签名
 
@@ -134,7 +143,7 @@ npm run lint:fix
 
 ## 当前限制
 
-- 当前文档与实现聚焦文本消息（`msgtype=text`）
+- 目前仅实现 `text` / `richText` 的入站解析，其他 `msgtype` 仍会忽略
 - 未实现单测（按当前改造要求）
 - `sessionWebhook` 使用内存缓存（重启后不保留历史会话映射）
 
