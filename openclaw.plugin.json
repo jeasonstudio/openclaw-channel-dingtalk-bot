@@ -1,0 +1,12 @@
+{
+  "id": "dingtalk",
+  "name": "DingTalk",
+  "description": "DingTalk webhook channel plugin for OpenClaw",
+  "version": "2.5.1",
+  "channels": ["dingtalk"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
