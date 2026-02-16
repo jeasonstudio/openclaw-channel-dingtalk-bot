@@ -16,6 +16,7 @@
 - 无需额外启动独立服务（路由注册到 OpenClaw gateway）
 - 默认回复 `markdown` 消息格式
 - 兼容群聊 `@机器人` 场景（支持 `isInAtList` / `atUsers` 判断）
+- 群聊回复会自动 `@` 触发用户（`atUserIds` + 文本 `@昵称`），单聊不启用 `@`
 
 ## 安装
 
@@ -131,7 +132,7 @@ openclaw plugins install -l .
 1. DingTalk POST 消息到 `/dingtalk-channel/message`
 2. 插件校验 token、解析消息
 3. 通过 OpenClaw runtime 进入 Agent 管道（`dispatchReplyFromConfig`）
-4. `deliver` 回调中使用 `sessionWebhook + 签名` 回发 markdown
+4. `deliver` 回调中使用 `sessionWebhook + 签名` 回发 markdown（群聊首条分片自动 `@` 发送者）
 
 ## 开发命令
 

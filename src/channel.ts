@@ -26,6 +26,11 @@ const CHANNEL_ID = 'dingtalk';
 const webhookByConversation = new Map<string, { url: string; expiresAt: number }>();
 const routeUnregisterByAccount = new Map<string, () => void>();
 
+interface DingTalkMentionPayload {
+  atUserIds: string[];
+  displayName?: string;
+}
+
 const meta: ChannelMeta = {
   id: CHANNEL_ID,
   label: 'DingTalk',
@@ -88,18 +93,29 @@ async function sendMarkdownBySessionWebhook(params: {
   sessionWebhook: string;
   secretKey: string;
   text: string;
+  mention?: DingTalkMentionPayload;
 }): Promise<void> {
-  const { sessionWebhook, secretKey, text } = params;
+  const { sessionWebhook, secretKey, text, mention } = params;
   const { timestamp, sign } = dingtalkSign(secretKey);
   const separator = sessionWebhook.includes('?') ? '&' : '?';
   const signedUrl = `${sessionWebhook}${separator}timestamp=${timestamp}&sign=${sign}`;
+  const atUserIds = Array.from(
+    new Set(
+      (mention?.atUserIds ?? [])
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0),
+    ),
+  );
+  const mentionName = mention?.displayName?.trim() ?? '';
+  const mentionPrefix = atUserIds.length > 0 ? `@${mentionName || '用户'} ` : '';
+  const markdownText = mentionPrefix ? `${mentionPrefix}${text}` : text;
 
   const response = await axios.post(
     signedUrl,
     {
       msgtype: 'markdown',
-      markdown: { title: '[新的消息]', text },
-      at: { atMobiles: [], atUserIds: [], isAtAll: false },
+      markdown: { title: '[新的消息]', text: markdownText },
+      at: { atMobiles: [], atUserIds, isAtAll: false },
     },
     {
       headers: { 'Content-Type': 'application/json' },
@@ -253,6 +269,17 @@ async function handleInboundMessage(params: {
     return;
   }
   const messageText = parsed.text;
+  const mentionCandidateIds = Array.from(
+    new Set(
+      [
+        payload.senderId,
+        ...(payload.atUsers ?? [])
+          .map((item) => item.dingtalkId?.trim() ?? '')
+          .filter((item) => item.length > 0 && item === payload.senderId),
+      ].filter((item) => item.trim().length > 0),
+    ),
+  );
+  const mentionDisplayName = payload.senderNick?.trim() ?? '';
 
   webhookByConversation.set(payload.conversationId, {
     url: payload.sessionWebhook,
@@ -330,11 +357,18 @@ async function handleInboundMessage(params: {
         }
 
         const chunks = runtime.channel.text.chunkTextWithMode(text, textChunkLimit, chunkMode);
-        for (const chunk of chunks) {
+        for (const [index, chunk] of chunks.entries()) {
           await sendMarkdownBySessionWebhook({
             sessionWebhook: payload.sessionWebhook,
             secretKey: account.secretKey,
             text: chunk,
+            mention:
+              isGroup && index === 0 && mentionCandidateIds.length > 0
+                ? {
+                    atUserIds: mentionCandidateIds,
+                    displayName: mentionDisplayName,
+                  }
+                : undefined,
           });
         }
       },
