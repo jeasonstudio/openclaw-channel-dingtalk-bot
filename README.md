@@ -11,7 +11,7 @@
 
 ## 特性
 
-- 固定 gateway 路由：`/dingtalk-channel/message`
+- 入站 gateway 路由可选配置：`webhookPath`（默认 `/dingtalk-channel/message`）
 - 配置简化：仅需一个 `secretKey`
 - 无需额外启动独立服务（路由注册到 OpenClaw gateway）
 - 默认回复 `markdown` 消息格式
@@ -44,7 +44,8 @@ openclaw plugins install -l .
   "channels": {
     "dingtalk": {
       "enabled": true,
-      "secretKey": "SECxxxxxxxx"
+      "secretKey": "SECxxxxxxxx",
+      "webhookPath": "/dingtalk-channel/message"
     }
   }
 }
@@ -53,11 +54,12 @@ openclaw plugins install -l .
 说明：
 
 - `secretKey` 必填，对应钉钉机器人安全设置里的密钥
+- `webhookPath` 选填，入站回调路由；未配置时默认 `/dingtalk-channel/message`
 - 当前插件按单账号模式实现，账号 ID 固定为 `default`
 
 ## 钉钉侧配置
 
-在钉钉机器人回调地址中填写：
+在钉钉机器人回调地址中填写（与 `webhookPath` 配置保持一致）：
 
 `http(s)://<gateway-host>:<port>/dingtalk-channel/message`
 
@@ -129,7 +131,7 @@ openclaw plugins install -l .
 
 ## 工作流程
 
-1. DingTalk POST 消息到 `/dingtalk-channel/message`
+1. DingTalk POST 消息到 `webhookPath`（默认 `/dingtalk-channel/message`）
 2. 插件校验 token、解析消息
 3. 通过 OpenClaw runtime 进入 Agent 管道（`dispatchReplyFromConfig`）
 4. `deliver` 回调中使用 `sessionWebhook + 签名` 回发 markdown（群聊首条分片自动 `@` 发送者）

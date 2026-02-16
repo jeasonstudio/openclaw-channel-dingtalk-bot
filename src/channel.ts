@@ -20,7 +20,7 @@ import type {
   ResolvedDingTalkAccount,
 } from './types';
 
-const WEBHOOK_PATH = '/dingtalk-channel/message';
+const DEFAULT_WEBHOOK_PATH = '/dingtalk-channel/message';
 const CHANNEL_ID = 'dingtalk';
 
 const webhookByConversation = new Map<string, { url: string; expiresAt: number }>();
@@ -50,7 +50,16 @@ function resolveDingTalkConfig(cfg: OpenClawConfig): DingTalkConfig {
   return {
     enabled: channelCfg?.enabled ?? true,
     secretKey: typeof channelCfg?.secretKey === 'string' ? channelCfg.secretKey.trim() : '',
+    webhookPath: typeof channelCfg?.webhookPath === 'string' ? channelCfg.webhookPath.trim() : '',
   };
+}
+
+function resolveWebhookPath(cfg: OpenClawConfig): string {
+  const rawPath = resolveDingTalkConfig(cfg).webhookPath?.trim() ?? '';
+  if (!rawPath) {
+    return DEFAULT_WEBHOOK_PATH;
+  }
+  return rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
 }
 
 function resolveDingTalkAccount(cfg: OpenClawConfig, accountId?: string | null): ResolvedDingTalkAccount {
@@ -447,6 +456,7 @@ export const dingtalkPlugin: ChannelPlugin = {
       properties: {
         enabled: { type: 'boolean' },
         secretKey: { type: 'string' },
+        webhookPath: { type: 'string' },
       },
       required: ['secretKey'],
     },
@@ -510,12 +520,19 @@ export const dingtalkPlugin: ChannelPlugin = {
       };
     }) => {
       const account = resolveDingTalkAccount(ctx.cfg, ctx.accountId);
+      const webhookPath = resolveWebhookPath(ctx.cfg);
       if (!account.secretKey) {
         throw new Error('channels.dingtalk.secretKey is required');
       }
 
+      const prevUnregister = routeUnregisterByAccount.get(account.accountId);
+      if (prevUnregister) {
+        prevUnregister();
+        routeUnregisterByAccount.delete(account.accountId);
+      }
+
       const unregister = registerPluginHttpRoute({
-        path: WEBHOOK_PATH,
+        path: webhookPath,
         handler: createWebhookHandler({
           cfg: ctx.cfg,
           account,
@@ -529,7 +546,7 @@ export const dingtalkPlugin: ChannelPlugin = {
       });
 
       routeUnregisterByAccount.set(account.accountId, unregister);
-      ctx.log?.info?.(`dingtalk[${account.accountId}] webhook route registered: ${WEBHOOK_PATH}`);
+      ctx.log?.info?.(`dingtalk[${account.accountId}] webhook route registered: ${webhookPath}`);
     },
     stopAccount: async (ctx: { accountId: string; log?: { info?: (message: string) => void } }) => {
       const unregister = routeUnregisterByAccount.get(ctx.accountId);
