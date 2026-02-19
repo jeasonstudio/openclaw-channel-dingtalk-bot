@@ -22,6 +22,10 @@ import type {
 
 const DEFAULT_WEBHOOK_PATH = '/dingtalk-channel/message';
 const CHANNEL_ID = 'dingtalk';
+const JSON_CONTENT_TYPE = 'application/json';
+const JSON_CONTENT_TYPE_UTF8 = `${JSON_CONTENT_TYPE}; charset=utf-8`;
+const IMAGE_PLACEHOLDER = '[图片]';
+const IMAGE_DOWNLOAD_CODE_PLACEHOLDER = (downloadCode: string) => `[图片 downloadCode=${downloadCode}]`;
 
 const webhookByConversation = new Map<string, { url: string; expiresAt: number }>();
 const routeUnregisterByAccount = new Map<string, () => void>();
@@ -94,8 +98,22 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
 
 function respondJson(res: ServerResponse, statusCode: number, body: Record<string, unknown>): void {
   res.statusCode = statusCode;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Type', JSON_CONTENT_TYPE_UTF8);
   res.end(JSON.stringify(body));
+}
+
+function deduplicateMentionUserIds(userIds: string[]): string[] {
+  return Array.from(new Set(userIds.map((item) => item.trim()).filter((item) => item.length > 0)));
+}
+
+function buildMentionPrefix(mention?: DingTalkMentionPayload): { atUserIds: string[]; prefix: string } {
+  const atUserIds = deduplicateMentionUserIds(mention?.atUserIds ?? []);
+  if (atUserIds.length === 0) {
+    return { atUserIds, prefix: '' };
+  }
+
+  const mentionName = mention?.displayName?.trim() ?? '';
+  return { atUserIds, prefix: `@${mentionName || '用户'} ` };
 }
 
 async function sendMarkdownBySessionWebhook(params: {
@@ -108,15 +126,7 @@ async function sendMarkdownBySessionWebhook(params: {
   const { timestamp, sign } = dingtalkSign(secretKey);
   const separator = sessionWebhook.includes('?') ? '&' : '?';
   const signedUrl = `${sessionWebhook}${separator}timestamp=${timestamp}&sign=${sign}`;
-  const atUserIds = Array.from(
-    new Set(
-      (mention?.atUserIds ?? [])
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0),
-    ),
-  );
-  const mentionName = mention?.displayName?.trim() ?? '';
-  const mentionPrefix = atUserIds.length > 0 ? `@${mentionName || '用户'} ` : '';
+  const { atUserIds, prefix: mentionPrefix } = buildMentionPrefix(mention);
   const markdownText = mentionPrefix ? `${mentionPrefix}${text}` : text;
 
   const response = await axios.post(
@@ -127,7 +137,7 @@ async function sendMarkdownBySessionWebhook(params: {
       at: { atMobiles: [], atUserIds, isAtAll: false },
     },
     {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': JSON_CONTENT_TYPE },
     },
   );
 
@@ -158,13 +168,25 @@ async function resolveMessageFileDownloadUrl(params: {
     },
     {
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': JSON_CONTENT_TYPE,
         'x-acs-dingtalk-access-token': params.accessToken,
       },
     },
   );
 
   return (response.data?.downloadUrl ?? '').trim();
+}
+
+function resolveDownloadCode(node: DingTalkRichTextNode): string {
+  if (typeof node.downloadCode === 'string') {
+    return node.downloadCode;
+  }
+
+  if (typeof node.pictureDownloadCode === 'string') {
+    return node.pictureDownloadCode;
+  }
+
+  return '';
 }
 
 async function parseRichTextNodes(params: {
@@ -192,20 +214,15 @@ async function parseRichTextNodes(params: {
       continue;
     }
 
-    const downloadCode =
-      typeof node.downloadCode === 'string'
-        ? node.downloadCode
-        : typeof node.pictureDownloadCode === 'string'
-          ? node.pictureDownloadCode
-          : '';
+    const downloadCode = resolveDownloadCode(node);
 
     if (!downloadCode) {
-      parts.push('[图片]');
+      parts.push(IMAGE_PLACEHOLDER);
       continue;
     }
 
     if (!accessToken || !resolvedRobotCode || resolvedRobotCode === 'normal') {
-      parts.push(`[图片 downloadCode=${downloadCode}]`);
+      parts.push(IMAGE_DOWNLOAD_CODE_PLACEHOLDER(downloadCode));
       continue;
     }
 
@@ -215,16 +232,27 @@ async function parseRichTextNodes(params: {
         robotCode: resolvedRobotCode,
         accessToken,
       });
-      parts.push(downloadUrl ? `[图片](${downloadUrl})` : `[图片 downloadCode=${downloadCode}]`);
+      parts.push(downloadUrl ? `[图片](${downloadUrl})` : IMAGE_DOWNLOAD_CODE_PLACEHOLDER(downloadCode));
     } catch (err) {
       log(
         `dingtalk[${accountId}] resolve downloadUrl failed: ${String(err)}; fallback to downloadCode`,
       );
-      parts.push(`[图片 downloadCode=${downloadCode}]`);
+      parts.push(IMAGE_DOWNLOAD_CODE_PLACEHOLDER(downloadCode));
     }
   }
 
   return parts.join('');
+}
+
+function isGroupMessageMentioned(payload: DingTalkInboundMessage): boolean {
+  if (payload.conversationType !== '2') {
+    return true;
+  }
+
+  return (
+    payload.isInAtList ||
+    Boolean(payload.atUsers?.some((item) => item.dingtalkId === payload.chatbotUserId))
+  );
 }
 
 async function parseInboundText(params: {
@@ -278,16 +306,7 @@ async function handleInboundMessage(params: {
     return;
   }
   const messageText = parsed.text;
-  const mentionCandidateIds = Array.from(
-    new Set(
-      [
-        payload.senderId,
-        ...(payload.atUsers ?? [])
-          .map((item) => item.dingtalkId?.trim() ?? '')
-          .filter((item) => item.length > 0 && item === payload.senderId),
-      ].filter((item) => item.trim().length > 0),
-    ),
-  );
+  const mentionCandidateIds = deduplicateMentionUserIds([payload.senderId]);
   const mentionDisplayName = payload.senderNick?.trim() ?? '';
 
   webhookByConversation.set(payload.conversationId, {
@@ -295,10 +314,7 @@ async function handleInboundMessage(params: {
     expiresAt: payload.sessionWebhookExpiredTime,
   });
 
-  const mentioned =
-    !isGroup ||
-    payload.isInAtList ||
-    Boolean(payload.atUsers?.some((item) => item.dingtalkId === payload.chatbotUserId));
+  const mentioned = isGroupMessageMentioned(payload);
 
   if (isGroup && !mentioned) {
     log(`dingtalk[${account.accountId}] ignore non-mention group message`);
