@@ -137,8 +137,28 @@ async function sendMarkdownBySessionWebhook(params: {
 }
 
 type InboundTextParseResult =
-  | { text: string; source: 'text' | 'richText' }
+  | { text: string; source: 'text' | 'richText'; richTextImages: RichTextImageTask[] }
   | { text: ''; reason: 'unsupported' | 'empty' };
+
+interface RichTextImageTask {
+  downloadCode: string;
+  placeholder: string;
+}
+
+interface RichTextParseResult {
+  text: string;
+  images: RichTextImageTask[];
+}
+
+interface InboundSavedMedia {
+  path: string;
+  contentType: string;
+  placeholder: string;
+}
+
+const MAX_RICHTEXT_IMAGES = 10;
+const RICHTEXT_IMAGE_PLACEHOLDER = '<media:image>';
+const DEFAULT_INBOUND_MEDIA_MAX_BYTES = 30 * 1024 * 1024;
 
 function resolveDingTalkAccessToken(): string {
   const token = process.env.DINGTALK_ACCESS_TOKEN ?? process.env.DINGTALK_APP_ACCESS_TOKEN;
@@ -167,20 +187,130 @@ async function resolveMessageFileDownloadUrl(params: {
   return (response.data?.downloadUrl ?? '').trim();
 }
 
-async function parseRichTextNodes(params: {
-  nodes?: DingTalkRichTextNode[];
-  robotCode?: string;
+function resolveHttpContentType(headers: unknown): string {
+  if (!headers || typeof headers !== 'object') {
+    return '';
+  }
+  const headerValue =
+    (headers as Record<string, unknown>)['content-type'] ??
+    (headers as Record<string, unknown>)['Content-Type'];
+  return typeof headerValue === 'string' ? headerValue.trim() : '';
+}
+
+async function resolveBufferContentType(params: {
+  runtime: any;
+  buffer: Buffer;
+  fallback: string;
   log: (message: string) => void;
   accountId: string;
 }): Promise<string> {
-  const { nodes, robotCode, log, accountId } = params;
-  if (!Array.isArray(nodes) || nodes.length === 0) {
-    return '';
+  const { runtime, buffer, fallback, log, accountId } = params;
+  try {
+    const detectByCore = runtime?.core?.media?.detectMime;
+    if (typeof detectByCore === 'function') {
+      const maybeMime = await detectByCore({ buffer });
+      if (typeof maybeMime === 'string' && maybeMime.trim()) {
+        return maybeMime.trim();
+      }
+    }
+  } catch (err) {
+    log(`dingtalk[${accountId}] detect mime by core failed: ${String(err)}`);
+  }
+
+  try {
+    const detectByChannel = runtime?.channel?.media?.detectMime;
+    if (typeof detectByChannel === 'function') {
+      const maybeMime = await detectByChannel({ buffer });
+      if (typeof maybeMime === 'string' && maybeMime.trim()) {
+        return maybeMime.trim();
+      }
+    }
+  } catch (err) {
+    log(`dingtalk[${accountId}] detect mime by channel failed: ${String(err)}`);
+  }
+
+  return fallback || 'application/octet-stream';
+}
+
+async function downloadAndSaveRichTextImages(params: {
+  runtime: any;
+  accountId: string;
+  robotCode?: string;
+  images: RichTextImageTask[];
+  log: (message: string) => void;
+}): Promise<InboundSavedMedia[]> {
+  const { runtime, accountId, robotCode, images, log } = params;
+  if (!Array.isArray(images) || images.length === 0) {
+    return [];
+  }
+
+  const saveMediaBuffer = runtime?.channel?.media?.saveMediaBuffer;
+  if (typeof saveMediaBuffer !== 'function') {
+    log(`dingtalk[${accountId}] runtime.channel.media.saveMediaBuffer unavailable, skip media`);
+    return [];
   }
 
   const accessToken = resolveDingTalkAccessToken();
   const resolvedRobotCode = typeof robotCode === 'string' ? robotCode.trim() : '';
+  if (!accessToken || !resolvedRobotCode || resolvedRobotCode === 'normal') {
+    return [];
+  }
+
+  const out: InboundSavedMedia[] = [];
+  for (const image of images) {
+    try {
+      const downloadUrl = await resolveMessageFileDownloadUrl({
+        downloadCode: image.downloadCode,
+        robotCode: resolvedRobotCode,
+        accessToken,
+      });
+      if (!downloadUrl) {
+        log(`dingtalk[${accountId}] empty downloadUrl for richText image`);
+        continue;
+      }
+
+      const response = await axios.get<ArrayBuffer>(downloadUrl, { responseType: 'arraybuffer' });
+      const buffer = Buffer.from(response.data);
+      const contentType = await resolveBufferContentType({
+        runtime,
+        buffer,
+        fallback: resolveHttpContentType(response.headers),
+        log,
+        accountId,
+      });
+      const saved = await saveMediaBuffer(
+        buffer,
+        contentType,
+        'inbound',
+        DEFAULT_INBOUND_MEDIA_MAX_BYTES,
+      );
+      if (!saved?.path) {
+        log(`dingtalk[${accountId}] saveMediaBuffer returned empty path`);
+        continue;
+      }
+      out.push({
+        path: saved.path,
+        contentType: typeof saved.contentType === 'string' ? saved.contentType : contentType,
+        placeholder: image.placeholder,
+      });
+    } catch (err) {
+      log(`dingtalk[${accountId}] richText image download/save failed: ${String(err)}`);
+    }
+  }
+
+  return out;
+}
+
+function parseRichTextNodes(params: {
+  nodes?: DingTalkRichTextNode[];
+}): RichTextParseResult {
+  const { nodes } = params;
+  if (!Array.isArray(nodes) || nodes.length === 0) {
+    return { text: '', images: [] };
+  }
+
   const parts: string[] = [];
+  const images: RichTextImageTask[] = [];
 
   for (const node of nodes) {
     if (typeof node.text === 'string') {
@@ -199,55 +329,38 @@ async function parseRichTextNodes(params: {
           ? node.pictureDownloadCode
           : '';
 
-    if (!downloadCode) {
+    if (!downloadCode || images.length >= MAX_RICHTEXT_IMAGES) {
       parts.push('[图片]');
       continue;
     }
 
-    if (!accessToken || !resolvedRobotCode || resolvedRobotCode === 'normal') {
-      parts.push(`[图片 downloadCode=${downloadCode}]`);
-      continue;
-    }
-
-    try {
-      const downloadUrl = await resolveMessageFileDownloadUrl({
-        downloadCode,
-        robotCode: resolvedRobotCode,
-        accessToken,
-      });
-      parts.push(downloadUrl ? `[图片](${downloadUrl})` : `[图片 downloadCode=${downloadCode}]`);
-    } catch (err) {
-      log(
-        `dingtalk[${accountId}] resolve downloadUrl failed: ${String(err)}; fallback to downloadCode`,
-      );
-      parts.push(`[图片 downloadCode=${downloadCode}]`);
-    }
+    parts.push(RICHTEXT_IMAGE_PLACEHOLDER);
+    images.push({
+      downloadCode,
+      placeholder: RICHTEXT_IMAGE_PLACEHOLDER,
+    });
   }
 
-  return parts.join('');
+  return { text: parts.join(''), images };
 }
 
 async function parseInboundText(params: {
   payload: DingTalkInboundMessage;
-  log: (message: string) => void;
-  accountId: string;
 }): Promise<InboundTextParseResult> {
-  const { payload, log, accountId } = params;
+  const { payload } = params;
   if (payload.msgtype === 'text') {
     const text = (payload.text?.content ?? '').trim();
-    return text ? { text, source: 'text' } : { text: '', reason: 'empty' };
+    return text ? { text, source: 'text', richTextImages: [] } : { text: '', reason: 'empty' };
   }
 
   if (payload.msgtype === 'richText') {
-    const text = (
-      await parseRichTextNodes({
-        nodes: payload.content?.richText,
-        robotCode: payload.robotCode,
-        log,
-        accountId,
-      })
-    ).trim();
-    return text ? { text, source: 'richText' } : { text: '', reason: 'empty' };
+    const parsedRichText = parseRichTextNodes({
+      nodes: payload.content?.richText,
+    });
+    const text = parsedRichText.text.trim();
+    return text
+      ? { text, source: 'richText', richTextImages: parsedRichText.images }
+      : { text: '', reason: 'empty' };
   }
 
   return { text: '', reason: 'unsupported' };
@@ -266,8 +379,6 @@ async function handleInboundMessage(params: {
 
   const parsed = await parseInboundText({
     payload,
-    log,
-    accountId: account.accountId,
   });
   if ('reason' in parsed) {
     if (parsed.reason === 'unsupported') {
@@ -278,6 +389,33 @@ async function handleInboundMessage(params: {
     return;
   }
   const messageText = parsed.text;
+  const savedMedia =
+    parsed.source === 'richText'
+      ? await downloadAndSaveRichTextImages({
+          runtime,
+          accountId: account.accountId,
+          robotCode: payload.robotCode,
+          images: parsed.richTextImages,
+          log,
+        })
+      : [];
+  const mediaPaths = savedMedia.map((item) => item.path).filter((item) => item.trim().length > 0);
+  const mediaTypes = savedMedia
+    .map((item) => item.contentType)
+    .filter((item) => item.trim().length > 0);
+  const mediaPayload: Record<string, unknown> = {};
+  if (mediaPaths.length === 1) {
+    mediaPayload.MediaPath = mediaPaths[0];
+    if (mediaTypes[0]) {
+      mediaPayload.MediaType = mediaTypes[0];
+    }
+  }
+  if (mediaPaths.length > 1) {
+    mediaPayload.MediaPaths = mediaPaths;
+    if (mediaTypes.length === mediaPaths.length) {
+      mediaPayload.MediaTypes = mediaTypes;
+    }
+  }
   const mentionCandidateIds = Array.from(
     new Set(
       [
@@ -346,6 +484,7 @@ async function handleInboundMessage(params: {
     CommandAuthorized: true,
     OriginatingChannel: CHANNEL_ID,
     OriginatingTo: to,
+    ...mediaPayload,
   });
 
   const prefixContext = createReplyPrefixContext({ cfg, agentId: route.agentId });
@@ -439,7 +578,7 @@ export const dingtalkPlugin: ChannelPlugin = {
   meta,
   capabilities: {
     chatTypes: ['direct', 'group'],
-    media: false,
+    media: true,
     reactions: false,
     threads: false,
     polls: false,

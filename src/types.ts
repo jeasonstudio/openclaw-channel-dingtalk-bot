@@ -39,4 +39,8 @@ export interface DingTalkRichTextNode {
   type?: string;
   downloadCode?: string;
   pictureDownloadCode?: string;
+  fileName?: string;
+  contentType?: string;
+  width?: number;
+  height?: number;
 }
