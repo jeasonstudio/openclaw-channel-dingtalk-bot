@@ -22,6 +22,8 @@ import type {
 
 const DEFAULT_WEBHOOK_PATH = '/dingtalk-channel/message';
 const CHANNEL_ID = 'dingtalk';
+const DEFAULT_OUTBOUND_TITLE = '[新的消息]';
+const OUTBOUND_TITLE_PREVIEW_LENGTH = 15;
 
 const webhookByConversation = new Map<string, { url: string; expiresAt: number }>();
 const routeUnregisterByAccount = new Map<string, () => void>();
@@ -98,6 +100,32 @@ function respondJson(res: ServerResponse, statusCode: number, body: Record<strin
   res.end(JSON.stringify(body));
 }
 
+function stripMarkdownToPlainText(input: string): string {
+  return input
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/<https?:\/\/[^>]+>/g, ' ')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s{0,3}>\s?/gm, '')
+    .replace(/^\s*([-*+]|[0-9]+\.)\s+/gm, '')
+    .replace(/(\*\*|__|\*|_|~~)/g, '')
+    .replace(/<\/?[^>]+>/g, ' ')
+    .replace(/\r?\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildOutboundTitle(text: string): string {
+  const plainText = stripMarkdownToPlainText(text);
+  if (!plainText) {
+    return DEFAULT_OUTBOUND_TITLE;
+  }
+
+  return Array.from(plainText).slice(0, OUTBOUND_TITLE_PREVIEW_LENGTH).join('');
+}
+
 async function sendMarkdownBySessionWebhook(params: {
   sessionWebhook: string;
   secretKey: string;
@@ -118,12 +146,13 @@ async function sendMarkdownBySessionWebhook(params: {
   const mentionName = mention?.displayName?.trim() ?? '';
   const mentionPrefix = atUserIds.length > 0 ? `@${mentionName || '用户'} ` : '';
   const markdownText = mentionPrefix ? `${mentionPrefix}${text}` : text;
+  const title = buildOutboundTitle(text);
 
   const response = await axios.post(
     signedUrl,
     {
       msgtype: 'markdown',
-      markdown: { title: '[新的消息]', text: markdownText },
+      markdown: { title, text: markdownText },
       at: { atMobiles: [], atUserIds, isAtAll: false },
     },
     {
