@@ -1,10 +1,11 @@
 {
-  "name": "@openclaw/dingtalk",
-  "version": "2.5.1",
+  "name": "openclaw-channel-dingtalk-bot",
+  "version": "1.0.0",
   "description": "DingTalk (钉钉) channel plugin for OpenClaw",
   "main": "src/index.ts",
   "type": "module",
   "scripts": {
+    "build": "tsc -p tsconfig.json",
     "type-check": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint --fix src/ && prettier --write src/"
@@ -18,7 +19,7 @@
     "钉钉",
     "bot"
   ],
-  "author": "sym",
+  "author": "jeason <me@cowpoke.cc>",
   "license": "MIT",
   "dependencies": {
     "axios": "^1.13.5",
@@ -38,15 +39,15 @@
       "./src/index.ts"
     ],
     "channels": [
-      "dingtalk"
+      "openclaw-channel-dingtalk-bot"
     ],
     "installDependencies": true,
     "channel": {
-      "id": "dingtalk",
+      "id": "openclaw-channel-dingtalk-bot",
       "label": "DingTalk",
       "selectionLabel": "DingTalk (钉钉)",
-      "docsPath": "/channels/dingtalk",
-      "docsLabel": "dingtalk",
+      "docsPath": "/channels/openclaw-channel-dingtalk-bot",
+      "docsLabel": "openclaw-channel-dingtalk-bot",
       "blurb": "钉钉企业内部机器人，使用 Webhook 模式接入 OpenClaw gateway。",
       "order": 70,
       "aliases": [
@@ -55,9 +56,9 @@
       ]
     },
     "install": {
-      "npmSpec": "@openclaw/dingtalk",
+      "npmSpec": "openclaw-channel-dingtalk-bot",
       "localPath": "extensions/dingtalk-channel",
-      "defaultChoice": "local"
+      "defaultChoice": "npm"
     }
   }
 }

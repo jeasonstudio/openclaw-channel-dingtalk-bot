@@ -50,6 +50,14 @@ the OpenClaw gateway to the public network.
 
 ## Installation
 
+### Install from npm (recommended)
+
+```bash
+openclaw plugins install openclaw-channel-dingtalk-bot
+```
+
+OpenClaw plugin npm specs are registry package names (optionally with versions/tags).
+
 ### Install from GitHub
 
 ```bash
@@ -208,10 +216,13 @@ async function sendBySessionWebhook(sessionWebhook: string, secretKey: string, t
 ## Development
 
 ```bash
+npm run build
 npm run type-check
 npm run lint
 npm run lint:fix
 ```
+
+For npm publishing, run `npm run build` before `npm publish`.
 
 ## Current Limitations
 

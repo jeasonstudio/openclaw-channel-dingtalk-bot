@@ -42,6 +42,14 @@ DingTalk Channel，本项目刻意选择了 **自定义机器人（Custom Robot�
 
 ## 安装
 
+### 从 npm 安装（推荐）
+
+```bash
+openclaw plugins install openclaw-channel-dingtalk-bot
+```
+
+OpenClaw 的 npm 插件安装参数应为 registry 包名（可选版本或 tag）。
+
 ### 从 GitHub 安装
 
 ```bash
@@ -200,10 +208,13 @@ async function sendBySessionWebhook(sessionWebhook: string, secretKey: string, t
 ## 开发
 
 ```bash
+npm run build
 npm run type-check
 npm run lint
 npm run lint:fix
 ```
+
+如果你要发布到 npm，建议先执行 `npm run build`，再执行 `npm publish`。
 
 ## 当前限制
 

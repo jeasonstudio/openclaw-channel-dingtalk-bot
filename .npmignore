@@ -1,9 +1,6 @@
 # Dependencies
 node_modules/
 
-# Source files
-src/
-
 # Testing
 *.test.ts
 __tests__/
@@ -29,6 +26,7 @@ CLAUDE.md
 # IDE
 .vscode/
 .idea/
+.claude/
 
 # OS
 .DS_Store
