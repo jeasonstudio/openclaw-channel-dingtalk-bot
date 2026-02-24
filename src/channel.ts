@@ -30,7 +30,6 @@ const routeUnregisterByAccount = new Map<string, () => void>();
 
 interface DingTalkMentionPayload {
   atUserIds: string[];
-  displayName?: string;
 }
 
 const meta: ChannelMeta = {
@@ -143,16 +142,13 @@ async function sendMarkdownBySessionWebhook(params: {
         .filter((item) => item.length > 0),
     ),
   );
-  const mentionName = mention?.displayName?.trim() ?? '';
-  const mentionPrefix = atUserIds.length > 0 ? `@${mentionName || '用户'} ` : '';
-  const markdownText = mentionPrefix ? `${mentionPrefix}${text}` : text;
   const title = buildOutboundTitle(text);
 
   const response = await axios.post(
     signedUrl,
     {
       msgtype: 'markdown',
-      markdown: { title, text: markdownText },
+      markdown: { title, text },
       at: { atMobiles: [], atUserIds, isAtAll: false },
     },
     {
@@ -447,15 +443,11 @@ async function handleInboundMessage(params: {
   }
   const mentionCandidateIds = Array.from(
     new Set(
-      [
-        payload.senderId,
-        ...(payload.atUsers ?? [])
-          .map((item) => item.dingtalkId?.trim() ?? '')
-          .filter((item) => item.length > 0 && item === payload.senderId),
-      ].filter((item) => item.trim().length > 0),
+      (payload.atUsers ?? [])
+        .map((item) => item.dingtalkId?.trim() ?? '')
+        .filter((item) => item.length > 0),
     ),
   );
-  const mentionDisplayName = payload.senderNick?.trim() ?? '';
 
   webhookByConversation.set(payload.conversationId, {
     url: payload.sessionWebhook,
@@ -534,18 +526,12 @@ async function handleInboundMessage(params: {
         }
 
         const chunks = runtime.channel.text.chunkTextWithMode(text, textChunkLimit, chunkMode);
-        for (const [index, chunk] of chunks.entries()) {
+        for (const chunk of chunks) {
           await sendMarkdownBySessionWebhook({
             sessionWebhook: payload.sessionWebhook,
             secretKey: account.secretKey,
             text: chunk,
-            mention:
-              isGroup && index === 0 && mentionCandidateIds.length > 0
-                ? {
-                    atUserIds: mentionCandidateIds,
-                    displayName: mentionDisplayName,
-                  }
-                : undefined,
+            mention: mentionCandidateIds.length > 0 ? { atUserIds: mentionCandidateIds } : undefined,
           });
         }
       },
