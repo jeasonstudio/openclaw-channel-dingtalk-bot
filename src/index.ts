@@ -4,7 +4,7 @@ import { dingtalkPlugin } from './channel';
 import { setRuntime } from './runtime';
 
 const plugin = {
-  id: 'dingtalk',
+  id: 'openclaw-channel-dingtalk-bot',
   name: 'DingTalk',
   description: 'DingTalk webhook channel plugin',
   configSchema: emptyPluginConfigSchema(),

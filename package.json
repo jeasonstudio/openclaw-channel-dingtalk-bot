@@ -1,6 +1,6 @@
 {
   "name": "openclaw-channel-dingtalk-bot",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "description": "DingTalk (钉钉) channel plugin for OpenClaw",
   "main": "src/index.ts",
   "type": "module",
@@ -39,15 +39,15 @@
       "./src/index.ts"
     ],
     "channels": [
-      "openclaw-channel-dingtalk-bot"
+      "dingtalk"
     ],
     "installDependencies": true,
     "channel": {
-      "id": "openclaw-channel-dingtalk-bot",
+      "id": "dingtalk",
       "label": "DingTalk",
       "selectionLabel": "DingTalk (钉钉)",
-      "docsPath": "/channels/openclaw-channel-dingtalk-bot",
-      "docsLabel": "openclaw-channel-dingtalk-bot",
+      "docsPath": "/channels/dingtalk",
+      "docsLabel": "dingtalk",
       "blurb": "钉钉企业内部机器人，使用 Webhook 模式接入 OpenClaw gateway。",
       "order": 70,
       "aliases": [
