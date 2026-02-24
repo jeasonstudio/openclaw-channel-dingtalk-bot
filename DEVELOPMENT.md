@@ -35,7 +35,7 @@ npm run lint
 
 ### 2. 入站处理
 
-- 请求头校验：`secretKey.startsWith(token)`
+- 请求头校验：`secretKey === token`
 - 仅处理文本消息：`msgtype === 'text'`
 - 统一 `text.content.trim()`
 - 群聊只处理 `@机器人` 消息

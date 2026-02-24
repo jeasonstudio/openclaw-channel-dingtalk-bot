@@ -76,7 +76,7 @@ https://your-domain.com/dingtalk-channel/message
 The plugin validates request header `token` with:
 
 ```text
-secretKey.startsWith(token)
+secretKey === token
 ```
 
 If validation fails, it returns HTTP `401`.
@@ -84,7 +84,7 @@ If validation fails, it returns HTTP `401`.
 ### Supported Message Types
 
 - `msgtype = "text"`: parses and trims `text.content`
-- `msgtype = "richText"`: parses and concatenates `content.richText` text nodes, and extracts rich text image nodes
+- `msgtype = "richText"`: parses and concatenates `content.richText` text nodes
 
 For rich text image nodes, the plugin attempts to resolve temporary image URLs via:
 
@@ -97,15 +97,7 @@ Environment variables for access token:
 - `DINGTALK_ACCESS_TOKEN`
 - `DINGTALK_APP_ACCESS_TOKEN`
 
-Rich text image handling behavior:
-
-- Extract up to 10 image nodes per message
-- Resolve `downloadCode` -> temporary URL -> download image binary
-- Save inbound image into OpenClaw media storage (default max size `30MB`)
-- Inject `MediaPath` / `MediaPaths` (and `MediaType` / `MediaTypes`) into inbound context for multimodal agents
-- Keep readable text body with `<media:image>` placeholders for image positions
-
-If download fails (missing token, invalid `robotCode`, API error, or save failure), the plugin degrades gracefully to text placeholders and still dispatches the message.
+If download fails (missing token, invalid `robotCode`, or API error), the plugin degrades gracefully to a placeholder like `[image downloadCode=xxx]`.
 
 ### Group Mention Behavior
 

@@ -551,7 +551,7 @@ function createWebhookHandler(params: {
     }
 
     const token = readTokenHeader(req);
-    if (!token || !params.account.secretKey.startsWith(token)) {
+    if (!token || params.account.secretKey !== token) {
       respondJson(res, 401, { errcode: 1, errmsg: '[dingtalk] invalid token' });
       return;
     }
