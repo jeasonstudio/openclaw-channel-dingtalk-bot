@@ -1,5 +1,7 @@
 # DingTalk Channel Plugin for OpenClaw
 
+[简体中文文档](README.zh-CN.md)
+
 A production-oriented OpenClaw channel plugin for DingTalk using a **Webhook + SessionWebhook** architecture.
 
 This plugin receives DingTalk robot callbacks through the OpenClaw gateway and sends replies back through per-session webhooks with DingTalk-compliant signatures.
@@ -11,6 +13,34 @@ This plugin receives DingTalk robot callbacks through the OpenClaw gateway and s
 - Supports both plain text and rich text inbound messages
 - Handles group mention filtering to avoid unnecessary bot triggers
 - Signs outbound requests with DingTalk HMAC-SHA256 rules
+
+## Positioning vs Other DingTalk Channels
+
+Compared with many open-source DingTalk channels that are based on DingTalk Open Platform apps
+(`appKey` + `appSecret`, often with Stream mode), this project intentionally uses **Custom Robot**
+mode.
+
+### Main Advantages
+
+- **Lower setup cost and faster launch:** no need to apply for Open Platform app credentials
+  (`appKey`/`appSecret`), only `secretKey` is required.
+- **Safer default interaction boundary:** Custom Robot mode is group-oriented and does not support
+  regular 1:1 direct chat with the bot, which helps reduce accidental private information leakage.
+- **Operational simplicity:** webhook callback + session webhook reply keeps the architecture easy
+  to understand and deploy.
+
+### Trade-offs
+
+| Dimension | This Plugin (Custom Robot) | App/Stream-based Channels |
+| --- | --- | --- |
+| Credential setup | `secretKey` only | `appKey` + `appSecret` |
+| Delivery mode | Webhook callback | Usually Stream or event subscription |
+| Network requirement | Must expose OpenClaw gateway callback URL | Stream mode can avoid public callback exposure in some setups |
+| 1:1 DM support | Not supported (group-centric) | Usually supported |
+
+In short: this plugin optimizes for **convenience, low barrier, and safer group-only usage**, while
+accepting the limitation that it cannot use DingTalk Stream mode and therefore depends on exposing
+the OpenClaw gateway to the public network.
 
 ## Architecture Overview
 
