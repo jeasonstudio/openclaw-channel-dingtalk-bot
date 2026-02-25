@@ -2,7 +2,7 @@
   "id": "openclaw-channel-dingtalk-bot",
   "name": "DingTalk",
   "description": "DingTalk webhook channel plugin for OpenClaw",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "channels": ["dingtalk"],
   "configSchema": {
     "type": "object",

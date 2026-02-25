@@ -24,8 +24,10 @@ const DEFAULT_WEBHOOK_PATH = '/dingtalk-channel/message';
 const CHANNEL_ID = 'dingtalk';
 const DEFAULT_OUTBOUND_TITLE = '[新的消息]';
 const OUTBOUND_TITLE_PREVIEW_LENGTH = 15;
+const DINGTALK_ROBOT_SEND_API = 'https://oapi.dingtalk.com/robot/send';
+const OUTBOUND_DISABLED_ERROR =
+  '[dingtalk][outbound-disabled] channels.dingtalk.accessToken is required for active outbound delivery';
 
-const webhookByConversation = new Map<string, { url: string; expiresAt: number }>();
 const routeUnregisterByAccount = new Map<string, () => void>();
 
 interface DingTalkMentionPayload {
@@ -160,6 +162,35 @@ async function sendMarkdownBySessionWebhook(params: {
 
   if (response.data?.errcode !== 0) {
     throw new Error(`DingTalk send failed: ${response.data?.errmsg ?? 'unknown error'}`);
+  }
+}
+
+async function sendMarkdownByRobotAccessToken(params: {
+  accessToken: string;
+  secretKey: string;
+  text: string;
+}): Promise<void> {
+  const { accessToken, secretKey, text } = params;
+  const { timestamp, sign } = dingtalkSign(secretKey);
+  const signedUrl =
+    `${DINGTALK_ROBOT_SEND_API}?access_token=${encodeURIComponent(accessToken)}` +
+    `&timestamp=${timestamp}&sign=${sign}`;
+  const title = buildOutboundTitle(text);
+
+  const response = await axios.post(
+    signedUrl,
+    {
+      msgtype: 'markdown',
+      markdown: { title, text },
+      at: { atMobiles: [], atUserIds: [], isAtAll: false },
+    },
+    {
+      headers: { 'Content-Type': 'application/json' },
+    },
+  );
+
+  if (response.data?.errcode !== 0) {
+    throw new Error(`DingTalk robot send failed: ${response.data?.errmsg ?? 'unknown error'}`);
   }
 }
 
@@ -447,11 +478,6 @@ async function handleInboundMessage(params: {
     ),
   );
 
-  webhookByConversation.set(payload.conversationId, {
-    url: payload.sessionWebhook,
-    expiresAt: payload.sessionWebhookExpiredTime,
-  });
-
   const mentioned =
     !isGroup ||
     payload.isInAtList ||
@@ -641,17 +667,12 @@ export const dingtalkPlugin: ChannelPlugin = {
       accountId?: string | null;
     }) => {
       const account = resolveDingTalkAccount(cfg, accountId);
-      const cache = webhookByConversation.get(to);
-      if (!cache) {
-        throw new Error(`No sessionWebhook cache found for conversationId=${to}`);
-      }
-      if (cache.expiresAt <= Date.now()) {
-        webhookByConversation.delete(to);
-        throw new Error(`sessionWebhook expired for conversationId=${to}`);
+      if (!account.accessToken) {
+        throw new Error(OUTBOUND_DISABLED_ERROR);
       }
 
-      await sendMarkdownBySessionWebhook({
-        sessionWebhook: cache.url,
+      await sendMarkdownByRobotAccessToken({
+        accessToken: account.accessToken,
         secretKey: account.secretKey,
         text,
       });
@@ -700,6 +721,15 @@ export const dingtalkPlugin: ChannelPlugin = {
 
       routeUnregisterByAccount.set(account.accountId, unregister);
       ctx.log?.info?.(`dingtalk[${account.accountId}] webhook route registered: ${webhookPath}`);
+      if (account.accessToken) {
+        ctx.log?.info?.(
+          `dingtalk[${account.accountId}] active outbound enabled (robot/send by accessToken)`,
+        );
+      } else {
+        ctx.log?.info?.(
+          `dingtalk[${account.accountId}] active outbound disabled: channels.dingtalk.accessToken is empty; if you see "Outbound not configured for channel: dingtalk", it comes from OpenClaw core routing/config rather than this plugin outbound sender.`,
+        );
+      }
     },
     stopAccount: async (ctx: { accountId: string; log?: { info?: (message: string) => void } }) => {
       const unregister = routeUnregisterByAccount.get(ctx.accountId);

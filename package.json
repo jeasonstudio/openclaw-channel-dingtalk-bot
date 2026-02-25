@@ -1,6 +1,6 @@
 {
   "name": "openclaw-channel-dingtalk-bot",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "DingTalk (钉钉) channel plugin for OpenClaw",
   "main": "src/index.ts",
   "type": "module",

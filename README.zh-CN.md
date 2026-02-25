@@ -37,7 +37,8 @@ DingTalk Channel，本项目刻意选择了 **自定义机器人（Custom Robot�
 ## 架构概览
 
 - **入站：** 钉钉 `POST` 回调 -> OpenClaw gateway 路由 -> 消息解析/鉴权 -> agent 分发
-- **出站：** OpenClaw agent 响应 -> 缓存的 `sessionWebhook` -> 签名后发送钉钉 markdown 消息
+- **回复出站：** 入站触发的回复使用 `sessionWebhook` 并签名发送
+- **主动出站：** 定时/主动投递使用 `robot/send` + `accessToken`
 - **运行模式：** 单账号（`accountId = "default"`）
 
 ## 安装
@@ -85,7 +86,7 @@ openclaw plugins install -l .
 - `secretKey`（必填）：钉钉机器人安全密钥（通常以 `SEC` 开头）
 - `enabled`（可选）：默认 `true`
 - `webhookPath`（可选）：入站回调路径，默认 `/dingtalk-channel/message`
-- `accessToken`（可选）：用于富文本图片下载接口的钉钉 access token
+- `accessToken`（可选）：用于富文本图片下载和主动出站投递的钉钉 access token
 
 ## 钉钉回调设置
 
@@ -133,14 +134,21 @@ secretKey === token
 
 ## 出站消息与签名
 
-出站回复通过 `sessionWebhook` 以钉钉 markdown 消息发送。
+插件包含两条出站路径：
+
+- 回复出站（由入站消息触发）：`sessionWebhook`
+- 主动出站（定时/手动投递）：`POST https://oapi.dingtalk.com/robot/send`
+
+仅当配置了 `channels.dingtalk.accessToken` 时，主动出站才可用；未配置时默认不支持主动出站。
 
 签名算法：
 
 1. `timestamp = Date.now()`
 2. `textToSign = "${timestamp}\n${secretKey}"`
 3. `sign = encodeURIComponent(base64(HMAC_SHA256(secretKey, textToSign)))`
-4. 最终 URL：`{sessionWebhook}&timestamp={timestamp}&sign={sign}`
+4. 最终 URL：
+   - 回复出站：`{sessionWebhook}&timestamp={timestamp}&sign={sign}`
+   - 主动出站：`https://oapi.dingtalk.com/robot/send?access_token={accessToken}&timestamp={timestamp}&sign={sign}`
 
 ### 签名示例（Node.js）
 
@@ -163,6 +171,29 @@ import axios from 'axios';
 async function sendBySessionWebhook(sessionWebhook: string, secretKey: string, text: string) {
   const { timestamp, sign } = dingtalkSign(secretKey);
   const url = `${sessionWebhook}&timestamp=${timestamp}&sign=${sign}`;
+
+  await axios.post(
+    url,
+    {
+      msgtype: 'markdown',
+      markdown: { title: '[New Message]', text },
+      at: { atMobiles: [], atUserIds: [], isAtAll: false },
+    },
+    { headers: { 'Content-Type': 'application/json' } },
+  );
+}
+```
+
+### AccessToken 发送示例
+
+```ts
+import axios from 'axios';
+
+async function sendByAccessToken(accessToken: string, secretKey: string, text: string) {
+  const { timestamp, sign } = dingtalkSign(secretKey);
+  const url =
+    `https://oapi.dingtalk.com/robot/send?access_token=${accessToken}` +
+    `&timestamp=${timestamp}&sign=${sign}`;
 
   await axios.post(
     url,
@@ -202,6 +233,7 @@ async function sendBySessionWebhook(sessionWebhook: string, secretKey: string, t
 2. 插件校验 token 并解析入站 payload
 3. 消息被路由到 OpenClaw agent 分发
 4. agent 响应通过签名后的 `sessionWebhook` markdown 消息回发
+5. 定时/主动出站在配置 `accessToken` 后通过机器人接口投递
 
 ## 开发
 
@@ -217,7 +249,7 @@ npm run lint:fix
 ## 当前限制
 
 - 入站解析仅处理 `text` 与 `richText`
-- `sessionWebhook` 会话映射仅保存在内存中（重启后丢失）
+- 主动出站依赖 `channels.dingtalk.accessToken`
 - 仅支持单账号模型（`default`）
 
 ## License

@@ -45,7 +45,8 @@ the OpenClaw gateway to the public network.
 ## Architecture Overview
 
 - **Inbound:** DingTalk `POST` callback -> OpenClaw gateway route -> message parsing/auth -> agent dispatch
-- **Outbound:** OpenClaw agent response -> cached `sessionWebhook` -> signed DingTalk markdown message
+- **Reply outbound:** Inbound-triggered replies use `sessionWebhook` with DingTalk signature
+- **Active outbound:** Scheduled/active delivery uses robot API `robot/send` with `accessToken`
 - **Runtime mode:** single account (`accountId = "default"`)
 
 ## Installation
@@ -93,7 +94,7 @@ Configure OpenClaw in `~/.openclaw/openclaw.json`:
 - `secretKey` (required): DingTalk bot security key (typically starts with `SEC`)
 - `enabled` (optional): defaults to `true`
 - `webhookPath` (optional): inbound callback path, defaults to `/dingtalk-channel/message`
-- `accessToken` (optional): DingTalk access token used for rich-text image download API
+- `accessToken` (optional): DingTalk access token used for rich-text image download and active outbound delivery
 
 ## DingTalk Callback Setup
 
@@ -141,14 +142,21 @@ For group chats, inbound messages are processed only when the bot is mentioned (
 
 ## Outbound Message and Signing
 
-Outbound replies are sent as DingTalk markdown messages through `sessionWebhook`.
+There are two outbound paths:
+
+- Reply outbound (inbound-triggered): `sessionWebhook`
+- Active outbound (scheduled/manual): `POST https://oapi.dingtalk.com/robot/send`
+
+Active outbound is enabled only when `channels.dingtalk.accessToken` is configured. If not configured, active outbound is unsupported by default.
 
 Signature algorithm:
 
 1. `timestamp = Date.now()`
 2. `textToSign = "${timestamp}\n${secretKey}"`
 3. `sign = encodeURIComponent(base64(HMAC_SHA256(secretKey, textToSign)))`
-4. final URL: `{sessionWebhook}&timestamp={timestamp}&sign={sign}`
+4. final URL:
+   - Reply outbound: `{sessionWebhook}&timestamp={timestamp}&sign={sign}`
+   - Active outbound: `https://oapi.dingtalk.com/robot/send?access_token={accessToken}&timestamp={timestamp}&sign={sign}`
 
 ### Signing Example (Node.js)
 
@@ -171,6 +179,29 @@ import axios from 'axios';
 async function sendBySessionWebhook(sessionWebhook: string, secretKey: string, text: string) {
   const { timestamp, sign } = dingtalkSign(secretKey);
   const url = `${sessionWebhook}&timestamp=${timestamp}&sign=${sign}`;
+
+  await axios.post(
+    url,
+    {
+      msgtype: 'markdown',
+      markdown: { title: '[New Message]', text },
+      at: { atMobiles: [], atUserIds: [], isAtAll: false },
+    },
+    { headers: { 'Content-Type': 'application/json' } },
+  );
+}
+```
+
+### Send by AccessToken Example
+
+```ts
+import axios from 'axios';
+
+async function sendByAccessToken(accessToken: string, secretKey: string, text: string) {
+  const { timestamp, sign } = dingtalkSign(secretKey);
+  const url =
+    `https://oapi.dingtalk.com/robot/send?access_token=${accessToken}` +
+    `&timestamp=${timestamp}&sign=${sign}`;
 
   await axios.post(
     url,
@@ -210,6 +241,7 @@ async function sendBySessionWebhook(sessionWebhook: string, secretKey: string, t
 2. Plugin validates token and parses inbound payload
 3. Message is routed into OpenClaw agent dispatch
 4. Agent response is delivered via signed `sessionWebhook` markdown message
+5. Scheduled/active outbound is delivered via robot `accessToken` API when configured
 
 ## Development
 
@@ -225,7 +257,7 @@ For npm publishing, run `npm run build` before `npm publish`.
 ## Current Limitations
 
 - Only `text` and `richText` are handled for inbound parsing
-- Session webhook mapping is in-memory only (not persisted across restarts)
+- Active outbound requires `channels.dingtalk.accessToken`
 - Single-account model only (`default`)
 
 ## License
