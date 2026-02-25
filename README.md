@@ -83,7 +83,8 @@ Configure OpenClaw in `~/.openclaw/openclaw.json`:
     "dingtalk": {
       "enabled": true,
       "secretKey": "SECxxxxxxxx",
-      "webhookPath": "/dingtalk-channel/message"
+      "webhookPath": "/dingtalk-channel/message",
+      "accessToken": "dt_access_token_xxx"
     }
   }
 }
@@ -92,6 +93,7 @@ Configure OpenClaw in `~/.openclaw/openclaw.json`:
 - `secretKey` (required): DingTalk bot security key (typically starts with `SEC`)
 - `enabled` (optional): defaults to `true`
 - `webhookPath` (optional): inbound callback path, defaults to `/dingtalk-channel/message`
+- `accessToken` (optional): DingTalk access token used for rich-text image download API
 
 ## DingTalk Callback Setup
 
@@ -129,11 +131,7 @@ For rich text image nodes, the plugin attempts to resolve temporary image URLs v
 - `POST https://api.dingtalk.com/v1.0/robot/messageFiles/download`
 - Header: `x-acs-dingtalk-access-token`
 - Body: `{ downloadCode, robotCode }`
-
-Environment variables for access token:
-
-- `DINGTALK_ACCESS_TOKEN`
-- `DINGTALK_APP_ACCESS_TOKEN`
+- Token source: `channels.dingtalk.accessToken`
 
 If download fails (missing token, invalid `robotCode`, or API error), the plugin degrades gracefully to a placeholder like `[image downloadCode=xxx]`.
 

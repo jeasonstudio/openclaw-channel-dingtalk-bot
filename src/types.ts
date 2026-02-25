@@ -2,12 +2,14 @@ export interface DingTalkConfig {
   enabled?: boolean;
   secretKey: string;
   webhookPath?: string;
+  accessToken?: string;
 }
 
 export interface ResolvedDingTalkAccount {
   accountId: string;
   enabled: boolean;
   secretKey: string;
+  accessToken: string;
 }
 
 export interface DingTalkInboundMessage {

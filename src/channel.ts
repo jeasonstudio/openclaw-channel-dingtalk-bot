@@ -52,6 +52,7 @@ function resolveDingTalkConfig(cfg: OpenClawConfig): DingTalkConfig {
     enabled: channelCfg?.enabled ?? true,
     secretKey: typeof channelCfg?.secretKey === 'string' ? channelCfg.secretKey.trim() : '',
     webhookPath: typeof channelCfg?.webhookPath === 'string' ? channelCfg.webhookPath.trim() : '',
+    accessToken: typeof channelCfg?.accessToken === 'string' ? channelCfg.accessToken.trim() : '',
   };
 }
 
@@ -70,6 +71,7 @@ function resolveDingTalkAccount(cfg: OpenClawConfig, accountId?: string | null):
     accountId: resolvedAccountId,
     enabled: conf.enabled !== false,
     secretKey: conf.secretKey,
+    accessToken: conf.accessToken ?? '',
   };
 }
 
@@ -185,11 +187,6 @@ const MAX_RICHTEXT_IMAGES = 10;
 const RICHTEXT_IMAGE_PLACEHOLDER = '<media:image>';
 const DEFAULT_INBOUND_MEDIA_MAX_BYTES = 30 * 1024 * 1024;
 
-function resolveDingTalkAccessToken(): string {
-  const token = process.env.DINGTALK_ACCESS_TOKEN ?? process.env.DINGTALK_APP_ACCESS_TOKEN;
-  return typeof token === 'string' ? token.trim() : '';
-}
-
 async function resolveMessageFileDownloadUrl(params: {
   downloadCode: string;
   robotCode: string;
@@ -260,11 +257,12 @@ async function resolveBufferContentType(params: {
 async function downloadAndSaveRichTextImages(params: {
   runtime: any;
   accountId: string;
+  accessToken: string;
   robotCode?: string;
   images: RichTextImageTask[];
   log: (message: string) => void;
 }): Promise<InboundSavedMedia[]> {
-  const { runtime, accountId, robotCode, images, log } = params;
+  const { runtime, accountId, accessToken, robotCode, images, log } = params;
   if (!Array.isArray(images) || images.length === 0) {
     return [];
   }
@@ -275,7 +273,6 @@ async function downloadAndSaveRichTextImages(params: {
     return [];
   }
 
-  const accessToken = resolveDingTalkAccessToken();
   const resolvedRobotCode = typeof robotCode === 'string' ? robotCode.trim() : '';
   if (!accessToken || !resolvedRobotCode || resolvedRobotCode === 'normal') {
     return [];
@@ -419,6 +416,7 @@ async function handleInboundMessage(params: {
       ? await downloadAndSaveRichTextImages({
           runtime,
           accountId: account.accountId,
+          accessToken: account.accessToken,
           robotCode: payload.robotCode,
           images: parsed.richTextImages,
           log,
@@ -611,6 +609,7 @@ export const dingtalkPlugin: ChannelPlugin = {
         enabled: { type: 'boolean' },
         secretKey: { type: 'string' },
         webhookPath: { type: 'string' },
+        accessToken: { type: 'string' },
       },
       required: ['secretKey'],
     },

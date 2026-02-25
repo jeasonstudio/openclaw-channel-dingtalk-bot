@@ -75,7 +75,8 @@ openclaw plugins install -l .
     "dingtalk": {
       "enabled": true,
       "secretKey": "SECxxxxxxxx",
-      "webhookPath": "/dingtalk-channel/message"
+      "webhookPath": "/dingtalk-channel/message",
+      "accessToken": "dt_access_token_xxx"
     }
   }
 }
@@ -84,6 +85,7 @@ openclaw plugins install -l .
 - `secretKey`（必填）：钉钉机器人安全密钥（通常以 `SEC` 开头）
 - `enabled`（可选）：默认 `true`
 - `webhookPath`（可选）：入站回调路径，默认 `/dingtalk-channel/message`
+- `accessToken`（可选）：用于富文本图片下载接口的钉钉 access token
 
 ## 钉钉回调设置
 
@@ -121,11 +123,7 @@ secretKey === token
 - `POST https://api.dingtalk.com/v1.0/robot/messageFiles/download`
 - Header：`x-acs-dingtalk-access-token`
 - Body：`{ downloadCode, robotCode }`
-
-用于访问接口的环境变量：
-
-- `DINGTALK_ACCESS_TOKEN`
-- `DINGTALK_APP_ACCESS_TOKEN`
+- token 来源：`channels.dingtalk.accessToken`
 
 如果下载失败（token 缺失、`robotCode` 无效或 API 报错），插件会优雅降级为占位文本，例如 `[image downloadCode=xxx]`。
 
