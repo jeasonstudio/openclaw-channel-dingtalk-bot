@@ -141,6 +141,11 @@ secretKey === token
 
 仅当配置了 `channels.dingtalk.accessToken` 时，主动出站才可用；未配置时默认不支持主动出站。
 
+工具/手动发送目标建议：
+
+- 推荐使用 `default`（机器人级别出站目标）。
+- 也接受 `conversation:<id>` / `user:<id>` 这类显式 id，但自定义机器人接口本质上仍发送到该机器人可达的会话范围。
+
 签名算法：
 
 1. `timestamp = Date.now()`

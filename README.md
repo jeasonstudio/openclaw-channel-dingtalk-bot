@@ -149,6 +149,11 @@ There are two outbound paths:
 
 Active outbound is enabled only when `channels.dingtalk.accessToken` is configured. If not configured, active outbound is unsupported by default.
 
+For tools/manual send target:
+
+- Use `default` for robot-level outbound (recommended).
+- Explicit ids like `conversation:<id>` / `user:<id>` are accepted, but custom robot API still sends to the robot-bound conversation scope.
+
 Signature algorithm:
 
 1. `timestamp = Date.now()`

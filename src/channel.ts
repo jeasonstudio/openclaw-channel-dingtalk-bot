@@ -25,8 +25,11 @@ const CHANNEL_ID = 'dingtalk';
 const DEFAULT_OUTBOUND_TITLE = '[新的消息]';
 const OUTBOUND_TITLE_PREVIEW_LENGTH = 15;
 const DINGTALK_ROBOT_SEND_API = 'https://oapi.dingtalk.com/robot/send';
+const DEFAULT_ACTIVE_OUTBOUND_TARGET = 'default';
 const OUTBOUND_DISABLED_ERROR =
   '[dingtalk][outbound-disabled] channels.dingtalk.accessToken is required for active outbound delivery';
+const DINGTALK_TARGET_HINT =
+  'Use "default" for robot-level outbound, or explicit target id like conversation:<id> / user:<id>.';
 
 const routeUnregisterByAccount = new Map<string, () => void>();
 
@@ -127,6 +130,67 @@ function buildOutboundTitle(text: string): string {
   }
 
   return Array.from(plainText).slice(0, OUTBOUND_TITLE_PREVIEW_LENGTH).join('');
+}
+
+function normalizeDingTalkTarget(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const lowered = trimmed.toLowerCase();
+  if (
+    lowered === DEFAULT_ACTIVE_OUTBOUND_TARGET ||
+    lowered === `#${DEFAULT_ACTIVE_OUTBOUND_TARGET}` ||
+    lowered === `channel:${DEFAULT_ACTIVE_OUTBOUND_TARGET}` ||
+    lowered === `group:${DEFAULT_ACTIVE_OUTBOUND_TARGET}` ||
+    lowered === `chat:${DEFAULT_ACTIVE_OUTBOUND_TARGET}`
+  ) {
+    return DEFAULT_ACTIVE_OUTBOUND_TARGET;
+  }
+
+  return trimmed;
+}
+
+function looksLikeDingTalkTargetId(raw: string, normalized?: string): boolean {
+  const value = (normalized ?? raw).trim();
+  if (!value) {
+    return false;
+  }
+
+  const lowered = value.toLowerCase();
+  if (lowered === DEFAULT_ACTIVE_OUTBOUND_TARGET) {
+    return true;
+  }
+  if (/^(conversation|user|chat|group):/.test(lowered)) {
+    return true;
+  }
+  if (value.startsWith('#') || value.startsWith('@')) {
+    return true;
+  }
+  if (/^cid[\w+/:=.-]*$/i.test(value)) {
+    return true;
+  }
+  if (/^\$:[\w:-]+/i.test(value)) {
+    return true;
+  }
+
+  return false;
+}
+
+function buildActiveOutboundText(params: { text?: string; mediaUrl?: string }): string {
+  const text = (params.text ?? '').trim();
+  const mediaUrl = (params.mediaUrl ?? '').trim();
+  if (text && mediaUrl) {
+    return `${text}\n\n${mediaUrl}`;
+  }
+  if (text) {
+    return text;
+  }
+  if (mediaUrl) {
+    return mediaUrl;
+  }
+  return DEFAULT_OUTBOUND_TITLE;
 }
 
 async function sendMarkdownBySessionWebhook(params: {
@@ -615,6 +679,13 @@ function createWebhookHandler(params: {
 export const dingtalkPlugin: ChannelPlugin = {
   id: CHANNEL_ID,
   meta,
+  messaging: {
+    normalizeTarget: (raw: string) => normalizeDingTalkTarget(raw),
+    targetResolver: {
+      hint: DINGTALK_TARGET_HINT,
+      looksLikeId: (raw: string, normalized?: string) => looksLikeDingTalkTargetId(raw, normalized),
+    },
+  },
   capabilities: {
     chatTypes: ['direct', 'group'],
     media: true,
@@ -655,6 +726,10 @@ export const dingtalkPlugin: ChannelPlugin = {
   outbound: {
     deliveryMode: 'direct',
     chunker: null,
+    resolveTarget: ({ to }: { to?: string | null }) => {
+      const normalized = normalizeDingTalkTarget(to ?? '');
+      return { ok: true, to: normalized || DEFAULT_ACTIVE_OUTBOUND_TARGET };
+    },
     sendText: async ({
       cfg,
       to,
@@ -675,6 +750,37 @@ export const dingtalkPlugin: ChannelPlugin = {
         accessToken: account.accessToken,
         secretKey: account.secretKey,
         text,
+      });
+
+      return {
+        channel: CHANNEL_ID,
+        to,
+        messageId: `dingtalk-${Date.now()}`,
+      };
+    },
+    sendMedia: async ({
+      cfg,
+      to,
+      text,
+      mediaUrl,
+      accountId,
+    }: {
+      cfg: OpenClawConfig;
+      to: string;
+      text?: string;
+      mediaUrl?: string;
+      accountId?: string | null;
+    }) => {
+      const account = resolveDingTalkAccount(cfg, accountId);
+      if (!account.accessToken) {
+        throw new Error(OUTBOUND_DISABLED_ERROR);
+      }
+
+      const outboundText = buildActiveOutboundText({ text, mediaUrl });
+      await sendMarkdownByRobotAccessToken({
+        accessToken: account.accessToken,
+        secretKey: account.secretKey,
+        text: outboundText,
       });
 
       return {
