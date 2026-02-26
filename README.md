@@ -85,7 +85,10 @@ Configure OpenClaw in `~/.openclaw/openclaw.json`:
       "enabled": true,
       "secretKey": "SECxxxxxxxx",
       "webhookPath": "/dingtalk-channel/message",
-      "accessToken": "dt_access_token_xxx"
+      "accessToken": "dt_access_token_xxx",
+      "blockStreaming": true,
+      "toolProgress": "simple",
+      "toolProgressInGroup": "simple"
     }
   }
 }
@@ -95,6 +98,9 @@ Configure OpenClaw in `~/.openclaw/openclaw.json`:
 - `enabled` (optional): defaults to `true`
 - `webhookPath` (optional): inbound callback path, defaults to `/dingtalk-channel/message`
 - `accessToken` (optional): DingTalk access token used for rich-text image download and active outbound delivery
+- `blockStreaming` (optional): defaults to `true`; when `true`, block replies are sent as they are generated instead of waiting for final aggregation
+- `toolProgress` (optional): `off` or `simple`, defaults to `simple`; controls tool progress hints in direct chats
+- `toolProgressInGroup` (optional): `off` or `simple`, defaults to `simple`; controls tool progress hints in group chats
 
 ## DingTalk Callback Setup
 
@@ -139,6 +145,20 @@ If download fails (missing token, invalid `robotCode`, or API error), the plugin
 ### Group Mention Behavior
 
 For group chats, inbound messages are processed only when the bot is mentioned (`isInAtList` or matching `atUsers`).
+
+## Streaming and Tool Progress Visibility
+
+Default behavior (`blockStreaming=true`, `toolProgress=simple`, `toolProgressInGroup=simple`):
+
+- Reply blocks are delivered incrementally as soon as each block is ready
+- Tool activity is shown with concise hints such as:
+  - `正在调用天气工具...`
+  - `工具调用已完成，正在整理答案...`
+
+If you prefer quieter behavior:
+
+- Set `toolProgress` / `toolProgressInGroup` to `off` to hide tool progress hints
+- Set `blockStreaming` to `false` to fall back to non-streaming final reply style
 
 ## Outbound Message and Signing
 

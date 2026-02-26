@@ -3,6 +3,9 @@ export interface DingTalkConfig {
   secretKey: string;
   webhookPath?: string;
   accessToken?: string;
+  blockStreaming?: boolean;
+  toolProgress?: 'off' | 'simple';
+  toolProgressInGroup?: 'off' | 'simple';
 }
 
 export interface ResolvedDingTalkAccount {
@@ -10,6 +13,9 @@ export interface ResolvedDingTalkAccount {
   enabled: boolean;
   secretKey: string;
   accessToken: string;
+  blockStreaming: boolean;
+  toolProgress: 'off' | 'simple';
+  toolProgressInGroup: 'off' | 'simple';
 }
 
 export interface DingTalkInboundMessage {

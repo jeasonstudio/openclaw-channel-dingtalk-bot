@@ -26,6 +26,9 @@ const DEFAULT_OUTBOUND_TITLE = '[新的消息]';
 const OUTBOUND_TITLE_PREVIEW_LENGTH = 15;
 const DINGTALK_ROBOT_SEND_API = 'https://oapi.dingtalk.com/robot/send';
 const DEFAULT_ACTIVE_OUTBOUND_TARGET = 'default';
+const DEFAULT_BLOCK_STREAMING = true;
+const DEFAULT_TOOL_PROGRESS_MODE = 'simple';
+const TOOL_PROGRESS_THROTTLE_MS = 1500;
 const OUTBOUND_DISABLED_ERROR =
   '[dingtalk][outbound-disabled] channels.dingtalk.accessToken is required for active outbound delivery';
 const DINGTALK_TARGET_HINT =
@@ -52,12 +55,26 @@ function resolveDingTalkConfig(cfg: OpenClawConfig): DingTalkConfig {
   const channelCfg = (cfg.channels as Record<string, unknown> | undefined)?.[
     CHANNEL_ID
   ] as Partial<DingTalkConfig> | undefined;
+  const toolProgress =
+    channelCfg?.toolProgress === 'off' || channelCfg?.toolProgress === 'simple'
+      ? channelCfg.toolProgress
+      : DEFAULT_TOOL_PROGRESS_MODE;
+  const toolProgressInGroup =
+    channelCfg?.toolProgressInGroup === 'off' || channelCfg?.toolProgressInGroup === 'simple'
+      ? channelCfg.toolProgressInGroup
+      : DEFAULT_TOOL_PROGRESS_MODE;
 
   return {
     enabled: channelCfg?.enabled ?? true,
     secretKey: typeof channelCfg?.secretKey === 'string' ? channelCfg.secretKey.trim() : '',
     webhookPath: typeof channelCfg?.webhookPath === 'string' ? channelCfg.webhookPath.trim() : '',
     accessToken: typeof channelCfg?.accessToken === 'string' ? channelCfg.accessToken.trim() : '',
+    blockStreaming:
+      typeof channelCfg?.blockStreaming === 'boolean'
+        ? channelCfg.blockStreaming
+        : DEFAULT_BLOCK_STREAMING,
+    toolProgress,
+    toolProgressInGroup,
   };
 }
 
@@ -77,6 +94,9 @@ function resolveDingTalkAccount(cfg: OpenClawConfig, accountId?: string | null):
     enabled: conf.enabled !== false,
     secretKey: conf.secretKey,
     accessToken: conf.accessToken ?? '',
+    blockStreaming: conf.blockStreaming ?? DEFAULT_BLOCK_STREAMING,
+    toolProgress: conf.toolProgress ?? DEFAULT_TOOL_PROGRESS_MODE,
+    toolProgressInGroup: conf.toolProgressInGroup ?? DEFAULT_TOOL_PROGRESS_MODE,
   };
 }
 
@@ -601,13 +621,65 @@ async function handleInboundMessage(params: {
     fallbackLimit: 4000,
   });
   const chunkMode = runtime.channel.text.resolveChunkMode(cfg, CHANNEL_ID);
+  const toolProgressMode = isGroup ? account.toolProgressInGroup : account.toolProgress;
+  const shouldShowToolProgress = toolProgressMode === 'simple';
+
+  let lastToolName = '';
+  let lastToolNoticeAt = 0;
+  let toolInFlight = false;
+  let toolDoneNoticeSent = false;
+
+  const sendSessionText = async (text: string, options?: { mention?: boolean }): Promise<void> => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    await sendMarkdownBySessionWebhook({
+      sessionWebhook: payload.sessionWebhook,
+      secretKey: account.secretKey,
+      text: trimmed,
+      mention:
+        options?.mention !== false && mentionCandidateIds.length > 0
+          ? { atUserIds: mentionCandidateIds }
+          : undefined,
+    });
+  };
+
+  const sendToolProgressNotice = async (text: string): Promise<void> => {
+    if (!shouldShowToolProgress) {
+      return;
+    }
+    await sendSessionText(text, { mention: false });
+  };
 
   const { dispatcher, replyOptions, markDispatchIdle } =
     runtime.channel.reply.createReplyDispatcherWithTyping({
       responsePrefix: prefixContext.responsePrefix,
       responsePrefixContextProvider: prefixContext.responsePrefixContextProvider,
       humanDelay: runtime.channel.reply.resolveHumanDelayConfig(cfg, route.agentId),
-      deliver: async (reply: ReplyPayload) => {
+      deliver: async (reply: ReplyPayload, info: { kind?: string }) => {
+        const kind = info.kind ?? 'final';
+
+        if (kind === 'tool' && shouldShowToolProgress) {
+          if (!toolInFlight) {
+            await sendToolProgressNotice('正在处理工具结果...');
+            toolInFlight = true;
+            toolDoneNoticeSent = false;
+            lastToolName = '工具';
+            lastToolNoticeAt = Date.now();
+          }
+          return;
+        }
+
+        if ((kind === 'block' || kind === 'final') && shouldShowToolProgress && toolInFlight) {
+          if (!toolDoneNoticeSent) {
+            await sendToolProgressNotice('工具调用已完成，正在整理答案...');
+            toolDoneNoticeSent = true;
+          }
+          toolInFlight = false;
+        }
+
         const text = (reply.text ?? '').trim();
         if (!text) {
           return;
@@ -615,12 +687,7 @@ async function handleInboundMessage(params: {
 
         const chunks = runtime.channel.text.chunkTextWithMode(text, textChunkLimit, chunkMode);
         for (const chunk of chunks) {
-          await sendMarkdownBySessionWebhook({
-            sessionWebhook: payload.sessionWebhook,
-            secretKey: account.secretKey,
-            text: chunk,
-            mention: mentionCandidateIds.length > 0 ? { atUserIds: mentionCandidateIds } : undefined,
-          });
+          await sendSessionText(chunk);
         }
       },
       onError: (err: unknown, info: { kind?: string }) => {
@@ -633,7 +700,37 @@ async function handleInboundMessage(params: {
       cfg,
       ctx: ctxPayload,
       dispatcher,
-      replyOptions,
+      replyOptions: {
+        ...replyOptions,
+        disableBlockStreaming: account.blockStreaming === false,
+        onToolStart: async (toolPayload: { name?: string; phase?: string }) => {
+          if (!shouldShowToolProgress) {
+            return;
+          }
+
+          const phase = (toolPayload.phase ?? '').trim().toLowerCase();
+          if (phase && phase !== 'start' && phase !== 'update') {
+            return;
+          }
+
+          const rawToolName = (toolPayload.name ?? '').trim();
+          const dedupeName = rawToolName || '工具';
+          const now = Date.now();
+          if (
+            toolInFlight &&
+            dedupeName === lastToolName &&
+            now - lastToolNoticeAt < TOOL_PROGRESS_THROTTLE_MS
+          ) {
+            return;
+          }
+
+          await sendToolProgressNotice(rawToolName ? `正在调用${rawToolName}...` : '正在调用工具...');
+          lastToolName = dedupeName;
+          lastToolNoticeAt = now;
+          toolInFlight = true;
+          toolDoneNoticeSent = false;
+        },
+      },
     });
     log(`dingtalk[${account.accountId}] dispatched message session=${route.sessionKey}`);
   } finally {
@@ -707,6 +804,9 @@ export const dingtalkPlugin: ChannelPlugin = {
         secretKey: { type: 'string' },
         webhookPath: { type: 'string' },
         accessToken: { type: 'string' },
+        blockStreaming: { type: 'boolean' },
+        toolProgress: { type: 'string', enum: ['off', 'simple'] },
+        toolProgressInGroup: { type: 'string', enum: ['off', 'simple'] },
       },
       required: ['secretKey'],
     },
